@@ -1,0 +1,158 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+import os
+import telebot
+import time
+from yahoofinancials import YahooFinancials
+from selenium import webdriver
+from TokenFile import token as TOKEN
+
+bot = telebot.TeleBot(token=TOKEN)
+BATIN_ID = 57678862
+MY_ID = 407742044
+CHROME = (583, 1052)
+PYCHARM = (894, 1053)
+SEARCH_LINE = (895, 165)
+
+# celebrated = False
+# with open('celebrated.txt', 'r') as f:
+#     if '0' in f.read():
+#         bot.send_message(chat_id=BATIN_ID, text='С днем рождения!🤑')
+#         bot.send_message(chat_id=MY_ID, text='С днем рождения!🤑')
+#         celebrated = True
+# if celebrated is True:
+#     with open('celebrated.txt', 'w') as f:
+#         f.write('1')
+
+# with open('agents.txt') as f:
+#     AGENTS = f.readlines()
+
+stocks_that_are_already_sent = {}
+with open('stocks_that_are_already_sent.txt', 'r') as f:
+    lines = f.readlines()
+    for line in lines:
+        stocks_that_are_already_sent[line.split(' ')[0]] = line.split(' ')[1]
+
+
+def GetQuotes(tick):
+    yahoo_financials = YahooFinancials(tick)
+    try:
+        data = yahoo_financials.get_historical_price_data(start_date='1900-01-01', end_date='2021-08-26',
+                                                          time_interval='daily')[tick]
+        data = data['prices']
+    except KeyError:
+        with open('stocks_with_errors.txt', 'a') as f:
+            f.write(ticker + '\n')
+        return False
+
+    q = []
+    for d in data:
+        q.append(round(float(d['close']), 2))
+    return q
+
+
+def all_time_bear_trend_exists(quotes_list):
+    first_200_ma = sum(quotes_list[:200]) / 200
+    last_200_ma = sum(quotes_list[-200:]) / 200
+    quotes_list = quotes_list[:-1]
+    for j in range(50):
+        for a in range(len(quotes_list) - 1):
+            if a == 0:
+                continue
+            if a <= 20:
+                quotes_before_a = quotes_list[:a + 1]
+                quotes_list[a] = sum(quotes_before_a) / len(quotes_before_a)
+            else:
+                quotes_before_a = quotes_list[a - 19:a + 1]
+                quotes_list[a] = sum(quotes_before_a) / len(quotes_before_a)
+    quotes_list = quotes_list[20:-1]
+
+    if quotes_list[-1] <= quotes_list[0] and last_200_ma <= 0.8 * first_200_ma:
+        return True
+    return False
+
+
+while True:
+    try:
+        if time.strftime('%H') < '07':
+            time.sleep(1800)
+    except Exception as err:
+        pass
+    try:
+        time.sleep(5)
+
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.binary_location = os.environ.get('GOOGLE_CHROME_SHIM', None)
+        driver = webdriver.Chrome(executable_path="chromedriver", chrome_options=chrome_options)
+
+        driver.set_page_load_timeout(30)
+        # headers = {'user-agent': AGENTS[randint(0, len(AGENTS) - 1)].strip()}
+        driver.get("https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/")
+        time.sleep(4)
+
+        tickers = list(
+            map(lambda i: i.text, driver.find_elements_by_xpath('//a[@class="tv-screener__symbol apply-common-tooltip"]')))
+        percent_changes = list(map(lambda i: i.text.replace('%', ''), driver.find_elements_by_xpath(
+            '//td[@class="tv-data-table__cell tv-screener-table__cell tv-screener-table__cell--up tv-screener-table__cell--big tv-screener-table__cell--with-marker"]')))[
+                          ::2]
+        driver.quit()
+
+        for i in range(len(tickers)):
+            ticker = tickers[i]
+            percent_change = float(percent_changes[i])
+            if percent_change < 10:
+                continue
+            problem_stocks = []
+            with open('stocks_with_errors.txt', 'r', encoding='UTF-8') as f:
+                lines = f.readlines()
+                for line in lines:
+                    problem_stocks.append(line.strip())
+            if ticker in problem_stocks:
+                continue
+            try:
+                quotes = GetQuotes(ticker)
+            except Exception as err:
+                with open('stocks_with_errors.txt', 'a', encoding='UTF-8') as f:
+                    f.write(ticker + '\n')
+                continue
+            if not quotes or len(quotes) < 750:
+                continue
+            time.sleep(3)
+            with open('stocks_that_are_already_sent.txt', 'r') as f:
+                lines = f.readlines()
+                for line in lines:
+                    stocks_that_are_already_sent[line.split(' ')[0]] = line.split(' ')[1]
+            stock_can_be_sent = False
+            if ticker not in stocks_that_are_already_sent.keys():
+                stock_can_be_sent = True
+            else:
+                if float(stocks_that_are_already_sent[ticker]) <= float(percent_change) - 3:
+                    stock_can_be_sent = True
+            if all_time_bear_trend_exists(quotes) and float(percent_change) >= 10 and stock_can_be_sent:
+                answer = f'Найдена подходящая: {ticker}\nИзменение: +{percent_change}%'
+                with open('stocks_that_are_already_sent.txt', 'a') as f:
+                    f.write(f'{ticker} {percent_change}\n')
+                bot.send_message(text=answer, chat_id=BATIN_ID)
+                bot.send_message(text=answer, chat_id=MY_ID)
+            if time.strftime('%H') in '00':
+                f = open('stocks_that_are_already_sent.txt', 'w')
+                f.close()
+                f = open('stocks_with_errors.txt', 'w')
+                f.close()
+    except NameError as err:
+        ticker = 'Акция не нашлась'
+        bot.send_message(chat_id=MY_ID, text=ticker + ': ' + str(err))
+        with open('stocks_with_errors.txt', 'a', encoding='UTF-8') as f:
+            f.write(ticker + '\n')
+    except Exception as err:
+        try:
+            bot.send_message(chat_id=MY_ID, text=ticker + ': ' + str(err))
+            with open('stocks_with_errors.txt', 'r') as f:
+                problem_stocks = list(map(lambda i: i.strip(), f.readlines()))
+            if ticker not in problem_stocks:
+                with open('stocks_with_errors.txt', 'a') as f:
+                    f.write(ticker + '\n')
+        except Exception as err:
+            pass
+
+    time.sleep(10)

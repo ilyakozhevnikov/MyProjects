@@ -1,2 +1,2 @@
 # PetProjects
-В этом репозитории я храню две папки: 1) Мои пет-проджекты 2) Файлы для моей учебы на ПМИ ФКН
+In this repository you can find my 1)PetProjects 2)Some PDF files with my homework from AMI FCS.

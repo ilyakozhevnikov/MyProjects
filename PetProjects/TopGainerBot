@@ -1,33 +1,15 @@
-#! /usr/bin/env python
-# -*- coding: utf-8 -*-
-import os
+from yahoofinancials import YahooFinancials
+import matplotlib.pyplot as plt
+from selenium import webdriver
+from TokenFile import TOKEN
+from PIL import Image
 import telebot
 import time
-from yahoofinancials import YahooFinancials
-from selenium import webdriver
-from TokenFile import token as TOKEN
-import matplotlib.pyplot as plt
-from PIL import Image
 
 bot = telebot.TeleBot(token=TOKEN)
 BATIN_ID = 57678862
 MY_ID = 407742044
-CHROME = (583, 1052)
-PYCHARM = (894, 1053)
-SEARCH_LINE = (895, 165)
 
-# celebrated = False
-# with open('celebrated.txt', 'r') as f:
-#     if '0' in f.read():
-#         bot.send_message(chat_id=BATIN_ID, text='С днем рождения!🤑')
-#         bot.send_message(chat_id=MY_ID, text='С днем рождения!🤑')
-#         celebrated = True
-# if celebrated is True:
-#     with open('celebrated.txt', 'w') as f:
-#         f.write('1')
-
-# with open('agents.txt') as f:
-#     AGENTS = f.readlines()
 
 stocks_that_are_already_sent = {}
 with open('stocks_that_are_already_sent.txt', 'r') as f:
@@ -38,14 +20,9 @@ with open('stocks_that_are_already_sent.txt', 'r') as f:
 
 def GetHistoricalPrices(ticker_):
     yahoo_financials = YahooFinancials(ticker_)
-    try:
-        historical_price_data_ = yahoo_financials.get_historical_price_data(start_date='1900-01-01',
-                                                                            end_date=time.strftime('20%y-%m-%d'),
-                                                                            time_interval='daily')[ticker_]['prices']
-    except KeyError:
-        with open('stocks_with_errors.txt', 'a') as f:
-            f.write(ticker_ + '\n')
-        return False
+    historical_price_data_ = yahoo_financials.get_historical_price_data(start_date='1900-01-01',
+                                                                        end_date=time.strftime('20%y-%m-%d'),
+                                                                        time_interval='daily')[ticker_]['prices']
 
     historical_prices_ = []
     for price_tick_ in historical_price_data_:
@@ -73,15 +50,6 @@ def all_time_bear_trend_exists(quotes_list):
     if quotes_list[-1] <= quotes_list[0] and last_200_ma <= 0.8 * first_200_ma:
         return True
     return False
-
-
-def get_unavailable_tickers():
-    problem_stocks_ = []
-    with open('stocks_with_errors.txt', 'r', encoding='UTF-8') as f_:
-        lines_ = f_.readlines()
-        for line_ in lines_:
-            problem_stocks_.append(line_.strip())
-    return problem_stocks_
 
 
 def SaveImgWithStockPlot(historical_prices_, days_to_be_visualized_=0):
@@ -120,98 +88,110 @@ def CreateImgWith3Plots(historical_prices_):
     img.save("plot.png")
 
 
+def UpdateStocksAbsentInYahooFile(ticker_):
+    with open('StocksAbsentInYahoo.txt', 'r') as f_:
+        problem_stocks_ = list(map(lambda i: i.strip(), f_.readlines()))
+    if ticker_ not in problem_stocks_:
+        with open('StocksAbsentInYahoo.txt', 'a') as f_:
+            f_.write(ticker_ + '\n')
+
+
+def LogErrorAndSendAlarm(err_):
+    with open('logfile.txt', 'a') as f_:
+        f_.write(str(err_) + '\n')
+    bot.send_message(MY_ID, f'Была найдена ошибка:\n {err_}')
+
+
 while True:
-    try:
-        if time.strftime('%H') < '07':
-            time.sleep(1800)
-    except Exception as err:
-        pass
-    try:
-        time.sleep(5)
 
-        chrome_options = webdriver.ChromeOptions()
-        chrome_options.binary_location = os.environ.get('GOOGLE_CHROME_SHIM', None)
+    if time.strftime('%H') < '07':
+        time.sleep(1800)
 
+    time.sleep(5)
+
+    try:
         driver = webdriver.Chrome(executable_path="chromedriver.exe")
         driver.set_page_load_timeout(60)
         driver.get("https://www.tradingview.com/markets/stocks-usa/market-movers-gainers/")
-        time.sleep(4)
+        time.sleep(5)
+    except Exception as err:
+        LogErrorAndSendAlarm(err)
+        time.sleep(61)
+        continue
 
-        xpath_for_tickers = '//a[@class="apply-common-tooltip tickerName-qN79lDF8"]'
-        xpath_for_percent_changes = '//span[@class="positive-QbTXS8yz"]'
-        xpath_for_current_prices = '//td[@class="cell-v9oaRE4W right-v9oaRE4W"]'
+    xpath_for_tickers = '//a[@class="apply-common-tooltip tickerName-qN79lDF8"]'
+    xpath_for_percent_changes = '//span[@class="positive-QbTXS8yz"]'
+    xpath_for_current_prices = '//td[@class="cell-v9oaRE4W right-v9oaRE4W"]'
 
+    try:
         tickers = list(map(lambda i: i.text, driver.find_elements_by_xpath(xpath_for_tickers)))
         percent_changes = list(
             map(lambda i: float(i.text.replace('%', '')), driver.find_elements_by_xpath(xpath_for_percent_changes)))
         current_prices = list(map(lambda i: i.text, driver.find_elements_by_xpath(xpath_for_current_prices)))[::9]
-
-        driver.quit()
-
-        tickers_percent_changes = list(zip(tickers, percent_changes, current_prices))
-
-        for ticker, percent_change, current_price in tickers_percent_changes:
-
-            current_price = current_price.replace('USD', ' USD')
-
-            if percent_change < 10 or ticker in get_unavailable_tickers():
-                continue
-
-            try:
-                historical_prices = GetHistoricalPrices(ticker)
-            except Exception as err:
-                with open('stocks_with_errors.txt', 'a', encoding='UTF-8') as f:
-                    f.write(ticker + '\n')
-                continue
-
-            if not historical_prices or len(historical_prices) < 750:
-                continue
-
-            time.sleep(3)
-
-            with open('stocks_that_are_already_sent.txt', 'r') as f:
-                sent_stocks = f.readlines()
-                for sent_stock in sent_stocks:
-                    stocks_that_are_already_sent[sent_stock.split(' ')[0]] = sent_stock.split(' ')[1]
-            stock_can_be_sent = False
-
-            if ticker not in stocks_that_are_already_sent.keys():
-                stock_can_be_sent = True
-            else:
-                if float(stocks_that_are_already_sent[ticker]) <= float(percent_change) - 3:
-                    stock_can_be_sent = True
-
-            if stock_can_be_sent and float(percent_change) >= 10 and all_time_bear_trend_exists(historical_prices):
-
-                text = f'Найдена подходящая акция: {ticker}\nИзменение: +{percent_change}%\nЦена: {current_price}'
-                with open('stocks_that_are_already_sent.txt', 'a') as f:
-                    f.write(f'{ticker} {percent_change}\n')
-
-                CreateImgWith3Plots(historical_prices)
-                with open('plot.png', 'rb') as f:
-                    bot.send_photo(caption=text, photo=f, chat_id=MY_ID)
-                    # bot.send_photo(caption=text, photo=f, chat_id=BATIN_ID)
-                time.sleep(1)
-
-            if time.strftime('%H') in '00':
-                f = open('stocks_that_are_already_sent.txt', 'w')
-                f.close()
-                f = open('stocks_with_errors.txt', 'w')
-                f.close()
-    except NameError as err:
-        ticker = 'Акция не нашлась'
-        bot.send_message(chat_id=MY_ID, text=ticker + ': ' + str(err))
-        with open('stocks_with_errors.txt', 'a', encoding='UTF-8') as f:
-            f.write(ticker + '\n')
     except Exception as err:
+        LogErrorAndSendAlarm(err)
+        continue
+
+    driver.quit()
+
+    try:
+        tickers_percent_changes = list(zip(tickers, percent_changes, current_prices))
+    except Exception as err:
+        LogErrorAndSendAlarm(err)
+        continue
+
+    for ticker, percent_change, current_price in tickers_percent_changes:
+
+        current_price = current_price.replace('USD', ' USD')
+
+        if percent_change < 10:
+            continue
+
         try:
-            bot.send_message(chat_id=MY_ID, text=ticker + ': ' + str(err))
-            with open('stocks_with_errors.txt', 'r') as f:
-                problem_stocks = list(map(lambda i: i.strip(), f.readlines()))
-            if ticker not in problem_stocks:
-                with open('stocks_with_errors.txt', 'a') as f:
-                    f.write(ticker + '\n')
+            historical_prices = GetHistoricalPrices(ticker)
+        except KeyError as err:
+            LogErrorAndSendAlarm(err)
+            UpdateStocksAbsentInYahooFile(ticker)
+            continue
         except Exception as err:
-            pass
+            LogErrorAndSendAlarm(err)
+            continue
+
+        if not historical_prices or len(historical_prices) < 750:
+            continue
+
+        time.sleep(3)
+
+        with open('stocks_that_are_already_sent.txt', 'r') as f:
+            sent_stocks = f.readlines()
+            for sent_stock in sent_stocks:
+                stocks_that_are_already_sent[sent_stock.split(' ')[0]] = sent_stock.split(' ')[1]
+        stock_can_be_sent = False
+
+        if ticker not in stocks_that_are_already_sent.keys():
+            stock_can_be_sent = True
+        else:
+            if float(stocks_that_are_already_sent[ticker]) <= float(percent_change) - 3:
+                stock_can_be_sent = True
+
+        if stock_can_be_sent and float(percent_change) >= 10 and all_time_bear_trend_exists(historical_prices):
+
+            CreateImgWith3Plots(historical_prices)
+
+            with open('plot.png', 'rb') as f:
+                text = f'Найдена подходящая акция: {ticker}\nИзменение: +{percent_change}%\nЦена: {current_price}'
+                bot.send_photo(caption=text, photo=f, chat_id=MY_ID)
+                bot.send_photo(caption=text, photo=f, chat_id=BATIN_ID)
+
+            with open('stocks_that_are_already_sent.txt', 'a') as f:
+                f.write(f'{ticker} {percent_change}\n')
+
+            time.sleep(1)
+
+        if time.strftime('%H') in '00':
+            f = open('stocks_that_are_already_sent.txt', 'w')
+            f.close()
+            f = open('StocksAbsentInYahoo.txt', 'w')
+            f.close()
 
     time.sleep(10)

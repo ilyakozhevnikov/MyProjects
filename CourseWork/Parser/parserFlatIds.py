@@ -56,7 +56,6 @@ class PageParser:
             page_url = f"&p={self.page_index}"
             self.driver.get(self.base_link + page_url)
             initial_content = BeautifulSoup(self.driver.page_source, "html.parser")
-        # TODO: Implement parsing "SHOW MORE" if have enough time
 
     def get_ids(self):
         self.__parse__()

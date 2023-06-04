@@ -11,7 +11,6 @@ def argument_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base_link", default="https://www.cian.ru/cat.php?deal_type=sale&engine_version=2"\
                         "&offer_type=flat&region=1&room1=1&room2=1&room3=1&room4=1&room5=1&room6=1", type=str)
-    parser.add_argument("--help_link", default="http://bit.ly/3OG4Bp2", type=str)
     parser.add_argument("--start_page", default=1, type=int)
     parser.add_argument("--output", default="./data.csv", type=str)
     return parser
@@ -19,7 +18,6 @@ def argument_parser():
 
 if __name__ == "__main__":
     parser = argument_parser().parse_args()
-    webbrowser.open(parser.help_link)
 
     IDParser = PageParser(base_link=parser.base_link, start_page_index=parser.start_page)
     IDs = IDParser.get_ids()

@@ -15,7 +15,7 @@ def handle_start(message):
 
 
 @bot.message_handler(commands=['help'])
-def handle_start(message):
+def handle_help(message):
     text = 'Спешу на помощь!\nЯ работаю предельно просто: ты заполняешь прикрепленный файл данными своей квартиры, присылаешь этот файл мне, а я тебе говорю цену квартиры. Ничего сложного😊'
     bot.send_document(chat_id=message.chat.id, data=open(r'YourFlatData.xlsx', 'rb'), caption=text)
 
